@@ -239,6 +239,9 @@ Post.initialize_shortcuts = function() {
 }
 
 Post.initialize_links = function() {
+  $("#set-as-avatar-link").on('click.danbooru', function(e) {
+    Post.set_as_avatar($(e.target).data('post-id'));
+  });
   $("#copy-notes").on("click.danbooru", function(e) {
     var current_post_id = $("meta[name=post-id]").attr("content");
     var other_post_id = parseInt(prompt("Enter the ID of the post to copy all notes to:"), 10);
@@ -272,7 +275,7 @@ Post.initialize_post_relationship_previews = function() {
   var current_post_id = $("meta[name=post-id]").attr("content");
   $("[id=post_" + current_post_id + "]").addClass("current-post");
 
-  if (LS.get("show-relationship-previews") === "0") {
+  if (LS.get("show-relationship-previews") === "1") {
     this.toggle_relationship_preview($("#has-children-relationship-preview"), $("#has-children-relationship-preview-link"));
     this.toggle_relationship_preview($("#has-parent-relationship-preview"), $("#has-parent-relationship-preview-link"));
   }
@@ -583,7 +586,7 @@ Post.update = function(post_id, params) {
   });
 }
 
-Post.delete_with_reason = function(post_id, reason) {
+Post.delete_with_reason = function(post_id, reason, reload_after_delete) {
   Post.notice_update("inc");
   SendQueue.add(function() {
     $.ajax({
@@ -595,7 +598,30 @@ Post.delete_with_reason = function(post_id, reason) {
       $(window).trigger('danbooru:error', "Error: " + message);
     }).done(function(data) {
       $(window).trigger("danbooru:notice", "Deleted post.");
-      location.reload();
+      if(reload_after_delete) {
+        location.reload();
+      } else {
+        $(`article#post_${post_id}`).attr('data-flags', 'deleted');
+      }
+    }).always(function() {
+      Post.notice_update("dec");
+    });
+  });
+}
+
+Post.undelete = function(post_id) {
+  Post.notice_update("inc");
+  SendQueue.add(function() {
+    $.ajax({
+      type: "POST",
+      url: `/moderator/post/posts/${post_id}/undelete.json`
+    }).fail(function(data) {
+//      var message = $.map(data.responseJSON.errors, function(msg, attr) { return msg; }).join('; ');
+      const message = data.responseJSON.message;
+      $(window).trigger('danbooru:error', "Error: " + message);
+    }).done(function(data) {
+      $(window).trigger("danbooru:notice", "Deleted post.");
+      $(`article#post_${post_id}`).attr('data-flags', 'active');
     }).always(function() {
       Post.notice_update("dec");
     });
@@ -611,7 +637,8 @@ Post.unflag = function(post_id, approval) {
       url: `/posts/${post_id}/flag.json`,
       data: {approval: modApproval}
     }).fail(function(data) {
-      var message = $.map(data.responseJSON.errors, function(msg, attr) { return msg; }).join('; ');
+//      var message = $.map(data.responseJSON.errors, function(msg, attr) { return msg; }).join('; ');
+      const message = data.responseJSON.message;
       $(window).trigger('danbooru:error', "Error: " + message);
     }).done(function(data) {
       $(window).trigger("danbooru:notice", "Unflagged post");
@@ -708,6 +735,23 @@ Post.vote = function (id, score) {
       }
     }).always(function() {
       Post.notice_update("dec");
+    });
+  });
+}
+
+Post.set_as_avatar = function(id) {
+  SendQueue.add(function() {
+    $.ajax({
+      method: 'PATCH',
+      url: `/users/${Utility.meta("current-user-id")}.json`,
+      data: {
+        'user[avatar_id]': id
+      },
+      headers: {
+        accept: '*/*;q=0.5,text/javascript'
+      }
+    }).done(function(data) {
+      $(window).trigger("danbooru:notice", "Post set as avatar");
     });
   });
 }
